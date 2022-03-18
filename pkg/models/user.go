@@ -4,15 +4,47 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-type User struct {
-	Username string `gorm:"primaryKey"`
-	Role     string
-	Password string
-	Updated  int64 `gorm:"autoUpdateTime"`
-	Created  int64 `gorm:"autoCreateTime"`
+const (
+	Admin  Role = iota
+	Viewer Role = iota
+)
+
+type Role int
+
+func (r Role) String() string {
+	switch r {
+	case 0:
+		return "admin"
+	case 1:
+		return "viewer"
+	default:
+		return "undefined"
+	}
+}
+func (r Role) IsValid() bool {
+	return r == Admin || r == Viewer
 }
 
-func (user *User) ValidaePassword(password string) error {
+func ToRole(s string) Role {
+	switch s {
+	case "admin":
+		return 0
+	case "viewer":
+		return 1
+	default:
+		return -1
+	}
+}
+
+type User struct {
+	Username string `json:"username" gorm:"primaryKey"`
+	Password string `json:"password"`
+	Role     Role   `json:"role"`
+	Updated  int64  `gorm:"autoUpdateTime"`
+	Created  int64  `gorm:"autoCreateTime"`
+}
+
+func (user *User) ValidatePassword(password string) error {
 	err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password))
 	if err != nil {
 		return err

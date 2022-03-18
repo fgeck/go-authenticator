@@ -13,9 +13,9 @@ import (
 
 var (
 	SigningKey      string
-	registeredUsers = []models.Credentials{
-		{Username: "typ1", Password: "abcd", Role: "admin"},
-		{Username: "typ2", Password: "efgh", Role: "admin"},
+	registeredUsers = []models.User{
+		{Username: "typ1", Password: "abcd", Role: models.Admin},
+		{Username: "typ2", Password: "efgh"},
 	}
 )
 
@@ -42,18 +42,25 @@ func (sh *signinHandler) HandleSignIn(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	var creds models.Credentials
-	err := json.NewDecoder(r.Body).Decode(&creds)
+	var user models.User
+	err := json.NewDecoder(r.Body).Decode(&user)
 	if err != nil {
 		log.Println(err)
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	if !hasValidCredentials(&creds) {
+	foundCredentials, err := sh.FindUser(&user)
+	if err != nil {
+		log.Println(err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	if foundCredentials.Password != user.Password {
 		responseUnauthorized(w)
 		return
 	}
-	signedToken, err := sh.jwt.GenerateToken(creds)
+	signedToken, err := sh.jwt.GenerateToken(&user)
 	if err != nil {
 		log.Println(err)
 		w.WriteHeader(http.StatusInternalServerError)
@@ -67,15 +74,8 @@ func (sh *signinHandler) HandleSignIn(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(signedToken)
 }
 
-func hasValidCredentials(creds *models.Credentials) bool {
-	for _, user := range registeredUsers {
-		if user.Username == creds.Username {
-			if user.Password == creds.Password {
-				return true
-			}
-		}
-	}
-	return false
+func (sh *signinHandler) FindUser(creds *models.User) (*models.User, error) {
+	return sh.db.UserByName(creds.Username)
 }
 
 func responseUnauthorized(w http.ResponseWriter) {

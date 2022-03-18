@@ -9,6 +9,7 @@ import (
 	"github.com/floge77/go-authenticator/pkg/config"
 	"github.com/floge77/go-authenticator/pkg/db"
 	"github.com/floge77/go-authenticator/pkg/handlers"
+	"github.com/floge77/go-authenticator/pkg/jwt"
 	"github.com/floge77/go-authenticator/pkg/models"
 	"github.com/gorilla/mux"
 )
@@ -34,14 +35,18 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	err = db.Init()
+	if err != nil {
+		log.Println(err)
+	}
 	jwt := jwt.NewJwt(config.JwtSigningKey)
 	router := mux.NewRouter()
 	registerHandler := handlers.NewRegisterHandler(db, jwt)
 	signinHandler := handlers.NewSigninHandler(db, jwt)
 
 	router.HandleFunc("/healthz", handlers.Healthz)
-	router.HandleFunc("/sigin", signinHandler.HandleSignIn).Methods(http.MethodPost)
+	router.HandleFunc("/signin", signinHandler.HandleSignIn).Methods(http.MethodPost)
 	router.HandleFunc("/register", registerHandler.RegisterUser).Methods(http.MethodPost)
-	router.HandleFunc("/register", registerHandler.GetUsers).Methods(http.MethodGet)
+	router.HandleFunc("/user", handlers.Chain(registerHandler.GetUsers, handlers.EnforceAuthenticatedAndRole(models.Admin, jwt))).Methods(http.MethodGet)
 	log.Fatal(http.ListenAndServe(":9123", router))
 }

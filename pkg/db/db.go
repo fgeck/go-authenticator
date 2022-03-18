@@ -13,9 +13,11 @@ const (
 )
 
 type Database interface {
-	GetAllCredentials() ([]models.Credentials, error)
-	AddCredential(*models.Credentials) error
+	UserByName(string) (*models.User, error)
+	AddUser(*models.User) error
+	GetAllUsers() ([]models.User, error)
 	AutoMigrate() error
+	Init() error
 }
 
 type database struct {
@@ -42,7 +44,21 @@ func (db *database) AutoMigrate() error {
 		return err
 	}
 	defer db.close()
-	return db.connection.AutoMigrate(&models.Credentials{}) // add more models if needed
+	if err := db.connection.AutoMigrate(&models.User{}); err != nil {
+		return err
+	}
+	return db.connection.AutoMigrate(&models.User{})
+}
+
+func (db *database) Init() error {
+	if err := db.connect(); err != nil {
+		return err
+	}
+	defer db.close()
+	// ToDo: move this to env var!
+	// Create admin user
+	result := db.connection.Create(&models.User{Username: "floge77", Password: "secure", Role: models.Admin})
+	return result.Error
 }
 
 func (db *database) connect() error {
@@ -70,23 +86,36 @@ func (db *database) close() error {
 	return sqlDb.Close()
 }
 
-func (db *database) GetAllCredentials() ([]models.Credentials, error) {
-	var credentials []models.Credentials
+func (db *database) UserByName(username string) (*models.User, error) {
 	if err := db.connect(); err != nil {
 		return nil, err
 	}
 	defer db.close()
-	if result := db.connection.Find(&credentials); result.Error != nil {
+	var user *models.User
+	result := db.connection.First(&user, "username = ?", username)
+	if result.Error != nil {
 		return nil, result.Error
 	}
-	return credentials, nil
+	return user, nil
 }
 
-func (db *database) AddCredential(credential *models.Credentials) error {
+func (db *database) AddUser(user *models.User) error {
 	if err := db.connect(); err != nil {
 		return err
 	}
 	defer db.close()
-	result := db.connection.Create(credential)
+	result := db.connection.Create(user)
 	return result.Error
+}
+
+func (db *database) GetAllUsers() ([]models.User, error) {
+	var users []models.User
+	if err := db.connect(); err != nil {
+		return nil, err
+	}
+	defer db.close()
+	if result := db.connection.Find(&users); result.Error != nil {
+		return nil, result.Error
+	}
+	return users, nil
 }
