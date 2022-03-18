@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/floge77/go-authenticator/pkg/db"
+	"github.com/floge77/go-authenticator/pkg/jwt"
 	"github.com/floge77/go-authenticator/pkg/models"
 )
 
@@ -16,10 +17,10 @@ type RegisterHandler interface {
 }
 
 type registerHandler struct {
-	database db.DatabaseConnection
+	database db.Database
 }
 
-func NewRegisterHandler(connection db.DatabaseConnection) RegisterHandler {
+func NewRegisterHandler(connection db.Database, jwt jwt.Jwt) RegisterHandler {
 	return &registerHandler{database: connection}
 }
 
@@ -31,16 +32,19 @@ func (rh *registerHandler) RegisterUser(w http.ResponseWriter, r *http.Request) 
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	var credential models.Credentials
-	err = json.Unmarshal(body, &credential)
+	var user models.User
+	err = json.Unmarshal(body, &user)
 	if err != nil {
 		log.Println(err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	err = rh.database.AddCredential(&credential)
+	user.Role = models.Viewer
+	err = rh.database.AddUser(&user)
 	if err != nil {
+		log.Println(err)
 		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode("error")
 		return
 	}
 
@@ -50,11 +54,11 @@ func (rh *registerHandler) RegisterUser(w http.ResponseWriter, r *http.Request) 
 }
 
 func (rh *registerHandler) GetUsers(w http.ResponseWriter, r *http.Request) {
-	credentials, err := rh.database.GetAllCredentials()
+	users, err := rh.database.GetAllUsers()
 	if err != nil {
 		log.Println(err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	json.NewEncoder(w).Encode(credentials)
+	json.NewEncoder(w).Encode(users)
 }

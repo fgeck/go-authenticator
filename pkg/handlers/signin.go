@@ -7,15 +7,14 @@ import (
 	"time"
 
 	"github.com/floge77/go-authenticator/pkg/db"
-	jsonMessage "github.com/floge77/go-authenticator/pkg/json"
+	"github.com/floge77/go-authenticator/pkg/jwt"
 	"github.com/floge77/go-authenticator/pkg/models"
-	"github.com/golang-jwt/jwt/v4"
 )
 
 var (
 	SigningKey      string
-	registeredUsers = []models.Credentials{
-		{Username: "typ1", Password: "abcd"},
+	registeredUsers = []models.User{
+		{Username: "typ1", Password: "abcd", Role: models.Admin},
 		{Username: "typ2", Password: "efgh"},
 	}
 )
@@ -25,11 +24,12 @@ type SigninHandler interface {
 }
 
 type signinHandler struct {
-	db db.DatabaseConnection
+	db  db.Database
+	jwt jwt.Jwt
 }
 
-func NewSigninHandler(db db.DatabaseConnection) SigninHandler {
-	return &signinHandler{db: db}
+func NewSigninHandler(db db.Database, jwt jwt.Jwt) SigninHandler {
+	return &signinHandler{db: db, jwt: jwt}
 }
 
 func Healthz(w http.ResponseWriter, r *http.Request) {
@@ -42,42 +42,40 @@ func (sh *signinHandler) HandleSignIn(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	var creds models.Credentials
-	err := json.NewDecoder(r.Body).Decode(&creds)
+	var user models.User
+	err := json.NewDecoder(r.Body).Decode(&user)
 	if err != nil {
 		log.Println(err)
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	if !hasValidCredentials(&creds) {
-		responseUnauthorized(w)
-		return
-	}
-	expireIn := time.Now().Add(time.Minute * 5)
-	claims := &models.JwtClaim{Role: models.User, Claim: jwt.StandardClaims{ExpiresAt: expireIn.Unix()}}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	signedJwt, err := token.SignedString([]byte(SigningKey))
+	foundCredentials, err := sh.FindUser(&user)
 	if err != nil {
 		log.Println(err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	jwtResponse := &models.JwtResponse{Jwt: signedJwt}
 
-	if err = jsonMessage.WriteJsonResponse(jwtResponse, w); err != nil {
-		log.Println(err)
+	if foundCredentials.Password != user.Password {
+		responseUnauthorized(w)
+		return
 	}
+	signedToken, err := sh.jwt.GenerateToken(&user)
+	if err != nil {
+		log.Println(err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:    "token",
+		Value:   signedToken,
+		Expires: time.Now().Add(jwt.DefaultExpireIn),
+	})
+	json.NewEncoder(w).Encode(signedToken)
 }
 
-func hasValidCredentials(creds *models.Credentials) bool {
-	for _, user := range registeredUsers {
-		if user.Username == creds.Username {
-			if user.Password == creds.Password {
-				return true
-			}
-		}
-	}
-	return false
+func (sh *signinHandler) FindUser(creds *models.User) (*models.User, error) {
+	return sh.db.UserByName(creds.Username)
 }
 
 func responseUnauthorized(w http.ResponseWriter) {
