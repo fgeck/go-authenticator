@@ -20,9 +20,13 @@ const (
 	User  Role = iota
 )
 
+type JwtResponse struct {
+	Jwt string `json:"jwt"`
+}
+
 type JwtClaim struct {
-	Role  Role `json:"role"`
-	Claim jwt.StandardClaims
+	Role  Role               `json:"role"`
+	Claim jwt.StandardClaims `json:"claims"`
 }
 
 func (c JwtClaim) Valid() error {
