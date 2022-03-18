@@ -7,16 +7,15 @@ import (
 	"time"
 
 	"github.com/floge77/go-authenticator/pkg/db"
-	jsonMessage "github.com/floge77/go-authenticator/pkg/json"
+	"github.com/floge77/go-authenticator/pkg/jwt"
 	"github.com/floge77/go-authenticator/pkg/models"
-	"github.com/golang-jwt/jwt/v4"
 )
 
 var (
 	SigningKey      string
 	registeredUsers = []models.Credentials{
-		{Username: "typ1", Password: "abcd"},
-		{Username: "typ2", Password: "efgh"},
+		{Username: "typ1", Password: "abcd", Role: "admin"},
+		{Username: "typ2", Password: "efgh", Role: "admin"},
 	}
 )
 
@@ -25,11 +24,12 @@ type SigninHandler interface {
 }
 
 type signinHandler struct {
-	db db.DatabaseConnection
+	db  db.Database
+	jwt jwt.Jwt
 }
 
-func NewSigninHandler(db db.DatabaseConnection) SigninHandler {
-	return &signinHandler{db: db}
+func NewSigninHandler(db db.Database, jwt jwt.Jwt) SigninHandler {
+	return &signinHandler{db: db, jwt: jwt}
 }
 
 func Healthz(w http.ResponseWriter, r *http.Request) {
@@ -53,20 +53,18 @@ func (sh *signinHandler) HandleSignIn(w http.ResponseWriter, r *http.Request) {
 		responseUnauthorized(w)
 		return
 	}
-	expireIn := time.Now().Add(time.Minute * 5)
-	claims := &models.JwtClaim{Role: models.User, Claim: jwt.StandardClaims{ExpiresAt: expireIn.Unix()}}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	signedJwt, err := token.SignedString([]byte(SigningKey))
+	signedToken, err := sh.jwt.GenerateToken(creds)
 	if err != nil {
 		log.Println(err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	jwtResponse := &models.JwtResponse{Jwt: signedJwt}
-
-	if err = jsonMessage.WriteJsonResponse(jwtResponse, w); err != nil {
-		log.Println(err)
-	}
+	http.SetCookie(w, &http.Cookie{
+		Name:    "token",
+		Value:   signedToken,
+		Expires: time.Now().Add(jwt.DefaultExpireIn),
+	})
+	json.NewEncoder(w).Encode(signedToken)
 }
 
 func hasValidCredentials(creds *models.Credentials) bool {

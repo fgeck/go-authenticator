@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/floge77/go-authenticator/pkg/db"
+	"github.com/floge77/go-authenticator/pkg/jwt"
 	"github.com/floge77/go-authenticator/pkg/models"
 )
 
@@ -16,10 +17,10 @@ type RegisterHandler interface {
 }
 
 type registerHandler struct {
-	database db.DatabaseConnection
+	database db.Database
 }
 
-func NewRegisterHandler(connection db.DatabaseConnection) RegisterHandler {
+func NewRegisterHandler(connection db.Database, jwt jwt.Jwt) RegisterHandler {
 	return &registerHandler{database: connection}
 }
 
@@ -40,7 +41,9 @@ func (rh *registerHandler) RegisterUser(w http.ResponseWriter, r *http.Request) 
 	}
 	err = rh.database.AddCredential(&credential)
 	if err != nil {
+		log.Println(err)
 		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode("error")
 		return
 	}
 
